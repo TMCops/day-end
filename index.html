@@ -136,7 +136,7 @@ function entryView(date) {
   const by = d.by || localStorage.getItem("dayend-name") || "";
   $("#view").innerHTML = `<div id="f">
   <section class="card"><div class="row"><div><label for="date">Date</label><input type="date" id="date" value="${date}"></div>
-  <div style="align-self:end" class="mut">${ex ? "Already saved. Saving again replaces it." + (ex.updatedBy ? "<br>Last by " + esc(ex.updatedBy) : "") : "New day. Opening balance is yesterday’s counted cash."}</div></div></section>
+  <div style="align-self:end" class="mut">${ex ? "Saved and locked. To correct a mistake, ask the owner." + (ex.updatedBy ? "<br>Last by " + esc(ex.updatedBy) : "") : "New day. Opening balance is yesterday’s counted cash."}</div></div></section>
   <section class="card"><h2>Sales by payment mode</h2><table><thead><tr><th></th><th>System</th><th>Actual</th><th>Diff</th></tr></thead><tbody>
   ${MODES.map(([k, l]) => `<tr><td>${l}</td><td><input type="number" step="any" inputmode="decimal" id="s_${k}" value="${val(d.sys[k])}"></td><td><input type="number" step="any" inputmode="decimal" id="a_${k}" value="${val(d.act[k])}"></td><td id="df_${k}"></td></tr>`).join("")}
   <tr class="tot"><td>Total</td><td id="t_sys"></td><td id="t_act"></td><td id="t_diff"></td></tr></tbody></table>
