@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Day-end report</title>
+<style>
+:root{--bg:#f3f5f7;--card:#fff;--ink:#17202a;--mut:#5d6b78;--line:#dde3e9;--acc:#0f6e66;--accbg:#e6f2f1;--bad:#b3261e;--badbg:#fdecea;--ok:#1b7a3d;--okbg:#e6f4ea}
+@media(prefers-color-scheme:dark){:root{--bg:#12171c;--card:#1b232b;--ink:#e8edf2;--mut:#93a1ae;--line:#2c3742;--acc:#4fc3b8;--accbg:#16312f;--bad:#ff8a80;--badbg:#3a1f1d;--ok:#6fd08c;--okbg:#17301f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+#root{max-width:880px;margin:0 auto;padding:12px 12px 80px}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 2px}
+h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 10px}
+.who{font-size:13px;color:var(--mut)}
+.lnk{background:none;border:0;color:var(--acc);font:inherit;cursor:pointer;padding:2px 4px;text-decoration:underline}
+nav{display:flex;gap:6px;margin:8px 0}
+nav button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+nav button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:10px 0}
+.banner{background:var(--accbg);color:var(--ink);border-radius:8px;padding:8px 12px;font-size:13px}
+.mut,.hint{color:var(--mut);font-size:13px}.hint{margin:8px 0 0}
+table{width:100%;border-collapse:collapse}
+th{font-weight:600;text-align:right;font-size:13px;color:var(--mut);padding:4px}th:first-child,td:first-child{text-align:left}
+td{padding:4px;border-top:1px solid var(--line);text-align:right}
+.tot td{font-weight:700}
+input,textarea{width:100%;padding:9px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font:inherit}
+td input{text-align:right;min-width:70px}
+input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.line{display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line)}.line:first-of-type{border-top:0}
+.bad{color:var(--bad);font-weight:600}.good{color:var(--ok);font-weight:600}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.bad{background:var(--badbg)}.pill.good{background:var(--okbg)}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer;width:100%}
+.btn.sec{background:none;color:var(--acc);border:1px solid var(--acc);width:auto;padding:8px 14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi b{display:block;font-size:22px}.kpi span{font-size:13px;color:var(--mut)}
+.bars{display:flex;align-items:flex-end;gap:3px;height:130px;padding-top:6px}
+.bar{flex:1;background:var(--acc);border-radius:3px 3px 0 0;min-height:2px;position:relative}.bar.bad{background:var(--bad)}
+.bar i{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:10px;color:var(--mut);font-style:normal}
+.mix{display:grid;grid-template-columns:120px 1fr 90px;gap:8px;align-items:center;padding:3px 0;font-size:14px}
+.mix div{background:var(--accbg);border-radius:4px;height:10px}.mix div i{display:block;height:100%;background:var(--acc);border-radius:4px}
+.scroll{overflow-x:auto}.scroll table{min-width:620px}tbody tr[data-id]{cursor:pointer}tbody tr[data-id]:hover{background:var(--accbg)}
+.err{color:var(--bad)}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;display:none;z-index:9}
+.login{max-width:340px;margin:60px auto}.login input{margin-bottom:10px}
+</style>
+</head>
+<body>
+<div id="root"></div><div id="toast"></div>
+<script type="module">
+/* ====== SETTINGS: fill these in (see setup steps) ====== */
+const FIREBASE_CONFIG = { apiKey: "AIzaSyC0MiX2vu57PzPX9wS8LHArZd8HgPuP4m4", authDomain: "day-end-report-8e55a.firebaseapp.com", projectId: "day-end-report-8e55a", appId: "1:37101168758:web:3cad82b9670c40038ad757" };
+const OWNER_EMAILS = [themexicancanteen@gmail.com];          // e.g. ["you@gmail.com"]  (lowercase) – owners see the Dashboard
+const DIFF_ALERT = 500;           // flag a day if |actual − system| is above this (₹)
+const GAP_ALERT = 100;            // flag a day if drawer count is off by more than this (₹)
+/* ======================================================= */
+
+const MODES = [["swiggy","Swiggy / Zomato"],["cash","Cash"],["phonepe","PhonePe"],["pluxee","Pluxee"],["gpay","GPay / Paytm"],["card","Card"]];
+const NOTES = [500,200,100,50,20,10];
+const LS = "dayend-demo";
+const $ = (s, r = document) => r.querySelector(s);
+const n = v => Number(v) || 0;
+const inr = v => (v < 0 ? "−" : "") + "₹" + Math.abs(Math.round(v)).toLocaleString("en-IN");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const val = v => v ? v : "";
+const cls = (v, t) => Math.abs(v) > t ? "bad" : "";
+const root = $("#root");
+let B, user = null, isOwner = false, days = {}, tab = "entry", cur = { date: today(), month: today().slice(0, 7) }, watching = false;
+
+function toast(t) { const e = $("#toast"); e.textContent = t; e.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.display = "none", 2600); }
+
+/* ---------- data layer ---------- */
+function demoBackend() {
+  const ws = [];
+  const read = () => { try { return JSON.parse(localStorage.getItem(LS) || "{}"); } catch (e) { return {}; } };
+  const put = m => { try { localStorage.setItem(LS, JSON.stringify(m)); } catch (e) {} ws.forEach(f => f(read())); };
+  return { demo: true, onUser: cb => cb({ email: "demo (this device only)" }), login: async () => {}, logout: async () => {},
+    watch: cb => { ws.push(cb); cb(read()); },
+    save: async (id, d, u) => { const m = read(); m[id] = { ...d, updatedBy: u, updatedAt: new Date().toISOString() }; put(m); },
+    remove: async id => { const m = read(); delete m[id]; put(m); } };
+}
+async function firebaseBackend() {
+  const U = "https://www.gstatic.com/firebasejs/10.12.2/";
+  const [a, au, fs] = await Promise.all([import(U + "firebase-app.js"), import(U + "firebase-auth.js"), import(U + "firebase-firestore.js")]);
+  const app = a.initializeApp(FIREBASE_CONFIG), auth = au.getAuth(app), db = fs.getFirestore(app);
+  return { demo: false,
+    onUser: cb => au.onAuthStateChanged(auth, cb),
+    login: (e, p) => au.signInWithEmailAndPassword(auth, e, p),
+    logout: () => au.signOut(auth),
+    watch: cb => fs.onSnapshot(fs.collection(db, "days"), s => { const m = {}; s.forEach(x => m[x.id] = x.data()); cb(m); }, e => toast("Cannot read data: " + e.code)),
+    save: (id, d, u) => fs.setDoc(fs.doc(db, "days", id), { ...d, updatedBy: u, updatedAt: new Date().toISOString() }),
+    remove: id => fs.deleteDoc(fs.doc(db, "days", id)) };
+}
+
+/* ---------- model ---------- */
+const norm = d => ({ date: d.date || "", sys: { ...d.sys }, act: { ...d.act }, open: n(d.open), notes: { ...d.notes },
+  exp: [0, 1, 2].map(i => ({ d: d.exp?.[i]?.d || "", a: n(d.exp?.[i]?.a) })), wd: n(d.wd), by: d.by || "", note: d.note || "" });
+function calc(d) {
+  const sys = MODES.reduce((s, [k]) => s + n(d.sys[k]), 0), act = MODES.reduce((s, [k]) => s + n(d.act[k]), 0);
+  const exp = d.exp.reduce((s, e) => s + n(e.a), 0);
+  const expected = n(d.open) + n(d.act.cash) - exp - n(d.wd);
+  const counted = NOTES.reduce((s, v) => s + v * n(d.notes[v]), 0);
+  return { sys, act, diff: act - sys, exp, expected, counted, gap: counted - expected };
+}
+const flagged = c => Math.abs(c.diff) > DIFF_ALERT || Math.abs(c.gap) > GAP_ALERT;
+
+/* ---------- shell ---------- */
+function loginView(msg = "") {
+  root.innerHTML = `<form class="card login" id="login"><h1>Day-end report</h1><p class="mut">Sign in with the account the owner created for you.</p>
+  <label for="em">Email</label><input id="em" type="email" autocomplete="username" required>
+  <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required>
+  <p class="err">${esc(msg)}</p><button class="btn">Sign in</button></form>`;
+}
+function shell() {
+  const tb = (k, l) => `<button data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`;
+  root.innerHTML = `<header><h1>Day-end report</h1><div class="who">${esc(user.email)} ${B.demo ? "" : '<button class="lnk" id="out">Sign out</button>'}</div></header>
+  ${B.demo ? '<div class="banner">Demo mode: entries stay on this device. Add your Firebase settings to share data live.</div>' : ""}
+  <nav>${tb("entry", "Entry")}${isOwner ? tb("dash", "Dashboard") : ""}</nav><main id="view"></main>`;
+  tab === "dash" && isOwner ? dashView() : entryView(cur.date);
+}
+
+/* ---------- entry ---------- */
+function blank(date) {
+  const prev = Object.keys(days).filter(k => k < date).sort().pop();
+  const d = norm({ date });
+  if (prev) d.open = calc(norm(days[prev])).counted;
+  return d;
+}
+function entryView(date) {
+  cur.date = date;
+  const ex = days[date], d = ex ? norm(ex) : blank(date);
+  const by = d.by || localStorage.getItem("dayend-name") || "";
+  $("#view").innerHTML = `<div id="f">
+  <section class="card"><div class="row"><div><label for="date">Date</label><input type="date" id="date" value="${date}"></div>
+  <div style="align-self:end" class="mut">${ex ? "Already saved. Saving again replaces it." + (ex.updatedBy ? "<br>Last by " + esc(ex.updatedBy) : "") : "New day. Opening balance is yesterday’s counted cash."}</div></div></section>
+  <section class="card"><h2>Sales by payment mode</h2><table><thead><tr><th></th><th>System</th><th>Actual</th><th>Diff</th></tr></thead><tbody>
+  ${MODES.map(([k, l]) => `<tr><td>${l}</td><td><input type="number" step="any" inputmode="decimal" id="s_${k}" value="${val(d.sys[k])}"></td><td><input type="number" step="any" inputmode="decimal" id="a_${k}" value="${val(d.act[k])}"></td><td id="df_${k}"></td></tr>`).join("")}
+  <tr class="tot"><td>Total</td><td id="t_sys"></td><td id="t_act"></td><td id="t_diff"></td></tr></tbody></table>
+  <p class="hint">System = what the POS shows. Actual = what was really received. Diff = actual − system.</p></section>
+  <section class="card"><h2>Cash drawer</h2>
+  <label for="open">Opening balance (₹)</label><input type="number" step="any" inputmode="decimal" id="open" value="${val(d.open)}">
+  <div class="line"><span>Cash received (Cash actual)</span><b id="c_in"></b></div>
+  <div class="line"><span>Expenses and owner withdrawal</span><b id="c_out"></b></div>
+  <div class="line"><span>Closing balance expected</span><b id="expected"></b></div>
+  <table style="margin-top:10px"><thead><tr><th>Note</th><th>Count</th><th>Amount</th></tr></thead><tbody>
+  ${NOTES.map(v => `<tr><td>₹${v}</td><td><input type="number" min="0" step="1" inputmode="numeric" id="n_${v}" value="${val(d.notes[v])}"></td><td id="na_${v}"></td></tr>`).join("")}
+  <tr class="tot"><td>Counted</td><td></td><td id="counted"></td></tr></tbody></table>
+  <div class="line"><span>Counted − expected</span><b id="gap"></b></div></section>
+  <section class="card"><h2>Cash going out</h2>
+  ${[0, 1, 2].map(i => `<div class="row" style="grid-template-columns:2fr 1fr;margin-bottom:8px"><input id="ed${i}" placeholder="Expense ${i + 1} (e.g. pav, porter)" value="${esc(d.exp[i].d)}"><input type="number" step="any" inputmode="decimal" id="ea${i}" placeholder="₹" value="${val(d.exp[i].a)}"></div>`).join("")}
+  <label for="wd">Withdrawn by owner (₹)</label><input type="number" step="any" inputmode="decimal" id="wd" value="${val(d.wd)}"></section>
+  <section class="card"><h2>Sign-off</h2><label for="by">Settlement done by</label><input id="by" value="${esc(by)}" placeholder="Your name">
+  <label for="note" style="margin-top:10px">Comments</label><textarea id="note" rows="2">${esc(d.note)}</textarea></section>
+  <button class="btn" id="save">Save day-end report</button>
+  ${ex && isOwner && !B.demo ? '<p><button class="lnk err" id="del">Delete this day</button></p>' : ""}</div>`;
+  refresh();
+}
+function readForm() {
+  const g = id => $("#" + id).value;
+  const d = { date: g("date"), sys: {}, act: {}, notes: {}, exp: [], open: n(g("open")), wd: n(g("wd")), by: g("by").trim(), note: g("note").trim() };
+  MODES.forEach(([k]) => { d.sys[k] = n(g("s_" + k)); d.act[k] = n(g("a_" + k)); });
+  NOTES.forEach(v => d.notes[v] = n(g("n_" + v)));
+  [0, 1, 2].forEach(i => d.exp.push({ d: g("ed" + i).trim(), a: n(g("ea" + i)) }));
+  return d;
+}
+function refresh() {
+  const d = readForm(), c = calc(d), set = (id, t, k = "") => { const e = $("#" + id); e.textContent = t; e.className = k; };
+  MODES.forEach(([k]) => { const x = n(d.act[k]) - n(d.sys[k]); set("df_" + k, inr(x), cls(x, DIFF_ALERT)); });
+  set("t_sys", inr(c.sys)); set("t_act", inr(c.act)); set("t_diff", inr(c.diff), cls(c.diff, DIFF_ALERT));
+  set("c_in", inr(d.act.cash)); set("c_out", "− " + inr(c.exp + d.wd)); set("expected", inr(c.expected));
+  NOTES.forEach(v => set("na_" + v, inr(v * n(d.notes[v]))));
+  set("counted", inr(c.counted)); set("gap", c.gap === 0 ? "Matches" : inr(c.gap), c.gap === 0 ? "good" : cls(c.gap, GAP_ALERT));
+}
+async function save() {
+  const d = readForm();
+  if (!d.date) return toast("Pick a date");
+  if (!d.by) return toast("Enter who did the settlement");
+  try {
+    await B.save(d.date, d, user.email);
+    localStorage.setItem("dayend-name", d.by);
+    toast("Saved"); entryView(d.date);
+  } catch (e) { toast("Could not save: " + (e.code || e.message)); }
+}
+
+/* ---------- dashboard ---------- */
+function dashView() {
+  const m = cur.month;
+  const rows = Object.keys(days).filter(k => k.startsWith(m)).sort().map(id => { const d = norm(days[id]); d.date = id; return { id, d, c: calc(d) }; });
+  const act = rows.reduce((s, r) => s + r.c.act, 0), diff = rows.reduce((s, r) => s + r.c.diff, 0), bad = rows.filter(r => flagged(r.c)).length;
+  const latestId = Object.keys(days).sort().pop(), latest = latestId ? calc(norm(days[latestId])) : null;
+  const max = Math.max(1, ...rows.map(r => r.c.act));
+  $("#view").innerHTML = `<div class="row" style="align-items:end"><div><label for="month">Month</label><input type="month" id="month" value="${m}"></div>
+  <div style="text-align:right"><button class="btn sec" id="csv">Download CSV</button></div></div>
+  <div class="kpis" style="margin-top:10px">
+  <div class="card kpi"><span>Latest entry${latestId ? " (" + latestId + ")" : ""}</span><b>${latest ? inr(latest.act) : "–"}</b></div>
+  <div class="card kpi"><span>Sales this month</span><b>${inr(act)}</b></div>
+  <div class="card kpi"><span>Actual − system</span><b class="${cls(diff, DIFF_ALERT * 4)}">${inr(diff)}</b></div>
+  <div class="card kpi"><span>Days to check</span><b class="${bad ? "bad" : "good"}">${bad}</b></div></div>
+  <section class="card"><h2>Daily sales</h2>${rows.length ? `<div class="bars" style="margin-bottom:22px">${rows.map(r => `<div class="bar ${flagged(r.c) ? "bad" : ""}" style="height:${Math.max(2, r.c.act / max * 100)}%" title="${r.id}: ${inr(r.c.act)}"><i>${+r.id.slice(8)}</i></div>`).join("")}</div><p class="hint">Red bars have a system difference or drawer mismatch to check.</p>` : '<p class="mut">No entries for this month yet.</p>'}</section>
+  <section class="card"><h2>Payment mix</h2>${MODES.map(([k, l]) => { const s = rows.reduce((t, r) => t + n(r.d.act[k]), 0); return `<div class="mix"><span>${l}</span><div><i style="width:${act ? s / act * 100 : 0}%"></i></div><span style="text-align:right">${inr(s)}</span></div>`; }).join("")}</section>
+  <section class="card"><h2>Days</h2><div class="scroll"><table><thead><tr><th>Date</th><th>System</th><th>Actual</th><th>Diff</th><th>Drawer</th><th>Out</th><th>By</th></tr></thead><tbody>
+  ${rows.slice().reverse().map(r => `<tr data-id="${r.id}"><td>${r.id}</td><td>${inr(r.c.sys)}</td><td>${inr(r.c.act)}</td><td class="${cls(r.c.diff, DIFF_ALERT)}">${inr(r.c.diff)}</td><td class="${cls(r.c.gap, GAP_ALERT)}">${inr(r.c.gap)}</td><td>${inr(r.c.exp + r.d.wd)}</td><td>${esc(r.d.by)}</td></tr>`).join("") || '<tr><td colspan="7" class="mut">Nothing here yet.</td></tr>'}</tbody></table></div>
+  <p class="hint">Tap a day to open or correct it. This page updates live${B.demo ? " (on this device)" : ""}.</p></section>`;
+}
+function csv() {
+  const head = ["date", "system_total", "actual_total", "diff", ...MODES.flatMap(([k]) => [k + "_system", k + "_actual"]), "opening", "counted", "expected_closing", "drawer_gap", "expenses", "withdrawn", "settled_by", "comments"];
+  const lines = Object.keys(days).sort().map(id => { const d = norm(days[id]), c = calc(d);
+    return [id, c.sys, c.act, c.diff, ...MODES.flatMap(([k]) => [n(d.sys[k]), n(d.act[k])]), d.open, c.counted, c.expected, c.gap, c.exp, d.wd, d.by, d.note]
+      .map(x => '"' + String(x).replace(/"/g, '""') + '"').join(","); });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv" }));
+  a.download = "day-end-report.csv"; a.click();
+}
+
+/* ---------- events ---------- */
+root.addEventListener("input", e => { if (e.target.closest("#f")) refresh(); });
+root.addEventListener("change", e => {
+  if (e.target.id === "date" && e.target.value) entryView(e.target.value);
+  if (e.target.id === "month" && e.target.value) { cur.month = e.target.value; dashView(); }
+});
+root.addEventListener("click", async e => {
+  const t = e.target, tb = t.closest("[data-tab]"), row = t.closest("tr[data-id]");
+  if (tb) { tab = tb.dataset.tab; shell(); }
+  else if (row) { tab = "entry"; cur.date = row.dataset.id; shell(); }
+  else if (t.id === "save") save();
+  else if (t.id === "csv") csv();
+  else if (t.id === "out") { await B.logout(); location.reload(); }
+  else if (t.id === "del" && confirm("Delete the report for " + cur.date + "?")) { await B.remove(cur.date); toast("Deleted"); entryView(cur.date); }
+});
+root.addEventListener("submit", async e => {
+  if (e.target.id !== "login") return;
+  e.preventDefault();
+  try { await B.login($("#em").value.trim(), $("#pw").value); } catch (err) { loginView("Sign-in failed. Check email and password."); }
+});
+
+/* ---------- start ---------- */
+(async () => {
+  try { B = FIREBASE_CONFIG.apiKey ? await firebaseBackend() : demoBackend(); }
+  catch (e) { root.innerHTML = '<p class="err">Could not load the app. Check your connection and Firebase settings.</p>'; return; }
+  B.onUser(u => {
+    user = u;
+    if (!u) return loginView();
+    isOwner = B.demo || OWNER_EMAILS.map(x => x.toLowerCase()).includes((u.email || "").toLowerCase());
+    tab = isOwner ? "dash" : "entry";
+    shell();
+    if (!watching) {
+      watching = true;
+      let first = true;
+      B.watch(m => {
+        days = m;
+        if (first) { first = false; if (tab === "entry") entryView(cur.date); }
+        if (tab === "dash" && isOwner && $("#view") && !$("#view").querySelector("#f")) dashView();
+      });
+    }
+  });
+})();
+</script>
+</body>
+</html>
