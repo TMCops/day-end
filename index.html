@@ -56,9 +56,11 @@ const FIREBASE_CONFIG = { apiKey: "AIzaSyC0MiX2vu57PzPX9wS8LHArZd8HgPuP4m4", aut
 const OWNER_EMAILS = ["themexicancanteen@gmail.com"];          // e.g. ["you@gmail.com"]  (lowercase) – owners see the Dashboard
 const DIFF_ALERT = 500;           // flag a day if |actual − system| is above this (₹)
 const GAP_ALERT = 100;            // flag a day if drawer count is off by more than this (₹)
+const CLOSED_WEEKDAYS = [6];      // days the restaurant is closed: 0 = Sunday ... 6 = Saturday
+const CLOSED_DATES = [];          // extra closed dates, e.g. ["2026-11-14"] (holidays)
 /* ======================================================= */
 
-const MODES = [["swiggy","Swiggy / Zomato"],["cash","Cash"],["phonepe","PhonePe/Gpay/Paytm"],["pluxee","Pluxee"],["card","Card"]];
+const MODES = [["swiggy","Swiggy / Zomato"],["cash","Cash"],["phonepe","PhonePe"],["pluxee","Pluxee"],["gpay","GPay / Paytm"],["card","Card"]];
 const NOTES = [500,200,100,50,20,10];
 const LS = "dayend-demo";
 const $ = (s, r = document) => r.querySelector(s);
@@ -69,7 +71,7 @@ const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOff
 const val = v => v ? v : "";
 const cls = (v, t) => Math.abs(v) > t ? "bad" : "";
 const root = $("#root");
-let B, user = null, isOwner = false, days = {}, tab = "entry", cur = { date: today(), month: today().slice(0, 7) }, watching = false;
+let B, user = null, isOwner = false, days = {}, tab = "entry", cur = { date: today(), month: today().slice(0, 7) }, watching = false, dirty = false;
 
 function toast(t) { const e = $("#toast"); e.textContent = t; e.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.display = "none", 2600); }
 
@@ -95,6 +97,13 @@ async function firebaseBackend() {
     save: (id, d, u) => fs.setDoc(fs.doc(db, "days", id), { ...d, updatedBy: u, updatedAt: new Date().toISOString() }),
     remove: id => fs.deleteDoc(fs.doc(db, "days", id)) };
 }
+
+/* ---------- drafts (kept on this device only) ---------- */
+const dkey = date => "dayend-draft:" + (user?.email || "") + ":" + date;
+const loadDraft = date => { try { return JSON.parse(localStorage.getItem(dkey(date))); } catch { return null; } };
+const saveDraft = d => { try { localStorage.setItem(dkey(d.date), JSON.stringify(d)); } catch {} };
+const clearDraft = date => { try { localStorage.removeItem(dkey(date)); } catch {} };
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 /* ---------- model ---------- */
 const norm = d => ({ date: d.date || "", sys: { ...d.sys }, act: { ...d.act }, open: n(d.open), notes: { ...d.notes },
@@ -132,11 +141,14 @@ function blank(date) {
 }
 function entryView(date) {
   cur.date = date;
-  const ex = days[date], d = ex ? norm(ex) : blank(date);
+  const ex = days[date], locked = !!ex && !isOwner && !B.demo;
+  let d = ex ? norm(ex) : blank(date);
+  const draft = ex ? null : loadDraft(date);
+  if (draft) { const o = d.open; d = norm({ ...draft, date }); d.open = o; }
   const by = d.by || localStorage.getItem("dayend-name") || "";
   $("#view").innerHTML = `<div id="f">
   <section class="card"><div class="row"><div><label for="date">Date</label><input type="date" id="date" value="${date}"></div>
-  <div style="align-self:end" class="mut">${ex ? "Saved and locked. To correct a mistake, ask the owner." + (ex.updatedBy ? "<br>Last by " + esc(ex.updatedBy) : "") : "New day. Opening balance is yesterday’s counted cash."}</div></div></section>
+  <div style="align-self:end" class="mut">${ex ? (locked ? "Saved and locked. View only. To correct a mistake, ask the owner." : "Already saved. Saving again replaces it.") + (ex.updatedBy ? "<br>Last by " + esc(ex.updatedBy) : "") : (draft ? "Draft restored. Not saved yet. Press Save to submit." : "New day. Opening balance is yesterday’s counted cash.")}</div></div></section>
   <section class="card"><h2>Sales by payment mode</h2><table><thead><tr><th></th><th>System</th><th>Actual</th><th>Diff</th></tr></thead><tbody>
   ${MODES.map(([k, l]) => `<tr><td>${l}</td><td><input type="number" step="any" inputmode="decimal" id="s_${k}" value="${val(d.sys[k])}"></td><td><input type="number" step="any" inputmode="decimal" id="a_${k}" value="${val(d.act[k])}"></td><td id="df_${k}"></td></tr>`).join("")}
   <tr class="tot"><td>Total</td><td id="t_sys"></td><td id="t_act"></td><td id="t_diff"></td></tr></tbody></table>
@@ -155,8 +167,10 @@ function entryView(date) {
   <label for="wd">Withdrawn by owner (₹)</label><input type="number" step="any" inputmode="decimal" id="wd" value="${val(d.wd)}"></section>
   <section class="card"><h2>Sign-off</h2><label for="by">Settlement done by</label><input id="by" value="${esc(by)}" placeholder="Your name">
   <label for="note" style="margin-top:10px">Comments</label><textarea id="note" rows="2">${esc(d.note)}</textarea></section>
-  <button class="btn" id="save">Save day-end report</button>
+  ${locked ? "" : '<button class="btn" id="save">Save day-end report</button>'}
   ${ex && isOwner && !B.demo ? '<p><button class="lnk err" id="del">Delete this day</button></p>' : ""}</div>`;
+  if (locked) document.querySelectorAll("#f input, #f textarea").forEach(e => { if (e.id !== "date") e.disabled = true; });
+  dirty = !!draft;
   refresh();
 }
 function readForm() {
@@ -182,6 +196,7 @@ async function save() {
   try {
     await B.save(d.date, d, user.email);
     localStorage.setItem("dayend-name", d.by);
+    clearDraft(d.date); dirty = false;
     toast("Saved"); entryView(d.date);
   } catch (e) { toast("Could not save: " + (e.code || e.message)); }
 }
@@ -193,18 +208,32 @@ function dashView() {
   const act = rows.reduce((s, r) => s + r.c.act, 0), diff = rows.reduce((s, r) => s + r.c.diff, 0), bad = rows.filter(r => flagged(r.c)).length;
   const latestId = Object.keys(days).sort().pop(), latest = latestId ? calc(norm(days[latestId])) : null;
   const max = Math.max(1, ...rows.map(r => r.c.act));
+  const miss = missingDays(m), WD = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   $("#view").innerHTML = `<div class="row" style="align-items:end"><div><label for="month">Month</label><input type="month" id="month" value="${m}"></div>
   <div style="text-align:right"><button class="btn sec" id="csv">Download CSV</button></div></div>
   <div class="kpis" style="margin-top:10px">
   <div class="card kpi"><span>Latest entry${latestId ? " (" + latestId + ")" : ""}</span><b>${latest ? inr(latest.act) : "–"}</b></div>
   <div class="card kpi"><span>Sales this month</span><b>${inr(act)}</b></div>
   <div class="card kpi"><span>Actual − system</span><b class="${cls(diff, DIFF_ALERT * 4)}">${inr(diff)}</b></div>
-  <div class="card kpi"><span>Days to check</span><b class="${bad ? "bad" : "good"}">${bad}</b></div></div>
+  <div class="card kpi"><span>Days to check</span><b class="${bad ? "bad" : "good"}">${bad}</b></div>
+  <div class="card kpi"><span>Reports missing</span><b class="${miss.length ? "bad" : "good"}">${miss.length}</b></div></div>
+  ${miss.length ? `<section class="card"><h2>No report submitted</h2><table><tbody>${miss.slice().reverse().map(id => `<tr data-id="${id}"><td>${id}</td><td>${WD[new Date(id + "T00:00:00Z").getUTCDay()]}</td></tr>`).join("")}</tbody></table><p class="hint">Closed days (${CLOSED_WEEKDAYS.map(x => WD[x]).join(", ")}) are skipped. Tap a date to enter it.</p></section>` : ""}
   <section class="card"><h2>Daily sales</h2>${rows.length ? `<div class="bars" style="margin-bottom:22px">${rows.map(r => `<div class="bar ${flagged(r.c) ? "bad" : ""}" style="height:${Math.max(2, r.c.act / max * 100)}%" title="${r.id}: ${inr(r.c.act)}"><i>${+r.id.slice(8)}</i></div>`).join("")}</div><p class="hint">Red bars have a system difference or drawer mismatch to check.</p>` : '<p class="mut">No entries for this month yet.</p>'}</section>
   <section class="card"><h2>Payment mix</h2>${MODES.map(([k, l]) => { const s = rows.reduce((t, r) => t + n(r.d.act[k]), 0); return `<div class="mix"><span>${l}</span><div><i style="width:${act ? s / act * 100 : 0}%"></i></div><span style="text-align:right">${inr(s)}</span></div>`; }).join("")}</section>
   <section class="card"><h2>Days</h2><div class="scroll"><table><thead><tr><th>Date</th><th>System</th><th>Actual</th><th>Diff</th><th>Drawer</th><th>Out</th><th>By</th></tr></thead><tbody>
   ${rows.slice().reverse().map(r => `<tr data-id="${r.id}"><td>${r.id}</td><td>${inr(r.c.sys)}</td><td>${inr(r.c.act)}</td><td class="${cls(r.c.diff, DIFF_ALERT)}">${inr(r.c.diff)}</td><td class="${cls(r.c.gap, GAP_ALERT)}">${inr(r.c.gap)}</td><td>${inr(r.c.exp + r.d.wd)}</td><td>${esc(r.d.by)}</td></tr>`).join("") || '<tr><td colspan="7" class="mut">Nothing here yet.</td></tr>'}</tbody></table></div>
   <p class="hint">Tap a day to open or correct it. This page updates live${B.demo ? " (on this device)" : ""}.</p></section>`;
+}
+function missingDays(m) {
+  const keys = Object.keys(days).sort();
+  if (!keys.length) return [];
+  const first = keys[0], t = today(), out = [], d = new Date(m + "-01T00:00:00Z");
+  while (d.toISOString().slice(0, 7) === m) {
+    const id = d.toISOString().slice(0, 10);
+    if (id >= first && id < t && !days[id] && !CLOSED_WEEKDAYS.includes(d.getUTCDay()) && !CLOSED_DATES.includes(id)) out.push(id);
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
 }
 function csv() {
   const head = ["date", "system_total", "actual_total", "diff", ...MODES.flatMap(([k]) => [k + "_system", k + "_actual"]), "opening", "counted", "expected_closing", "drawer_gap", "expenses", "withdrawn", "settled_by", "comments"];
@@ -217,7 +246,11 @@ function csv() {
 }
 
 /* ---------- events ---------- */
-root.addEventListener("input", e => { if (e.target.closest("#f")) refresh(); });
+root.addEventListener("input", e => {
+  if (!e.target.closest("#f") || e.target.id === "date") return;
+  refresh(); dirty = true;
+  if (!days[cur.date]) saveDraft(readForm());
+});
 root.addEventListener("change", e => {
   if (e.target.id === "date" && e.target.value) entryView(e.target.value);
   if (e.target.id === "month" && e.target.value) { cur.month = e.target.value; dashView(); }
